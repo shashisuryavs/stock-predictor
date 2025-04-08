@@ -1,4 +1,3 @@
-
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -10,23 +9,13 @@ const path = require('path');
 const yahooFinance = require('yahoo-finance2').default;
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = 5000;
 
 // MongoDB Connection
-mongoose.connect(process.env.MONGO_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-  ssl: true,
-  tlsAllowInvalidCertificates: true, // Only if you're having SSL cert issues
-})
-.then(() => console.log('MongoDB connected successfully!'))
-.catch((err) => console.error('MongoDB connection error:', err));
+mongoose.connect(process.env.MONGO_URI);
 
-mongoose.connection.on('error', (err) => {
-  console.error('MongoDB error:', err);
-});
 
-// User Schema
+// User Schema for Authentication and Watchlist
 const userSchema = new mongoose.Schema({
   username: String,
   email: { type: String, unique: true },
@@ -35,8 +24,8 @@ const userSchema = new mongoose.Schema({
     {
       ticker: String,
       companyName: String,
-      prices: [Number],
-      dates: [String],
+      prices: [Number], // Array of stock prices for the ticker
+      dates: [String], // Array of dates for the stock data
     },
   ],
 });
@@ -48,7 +37,9 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use('/graphs', express.static(path.join(__dirname, 'graphs')));
 
-// Signup
+// Routes
+
+// Signup Route
 app.post('/signup', async (req, res) => {
   const { email, password, username } = req.body;
 
@@ -67,12 +58,12 @@ app.post('/signup', async (req, res) => {
     await newUser.save();
     res.status(201).json({ message: 'User created successfully!' });
   } catch (error) {
-    console.error('Signup error:', error);
+    console.error('Error creating user:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Login
+// Login Route
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
@@ -82,10 +73,15 @@ app.post('/login', async (req, res) => {
 
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
-    const isValid = await bcrypt.compare(password, user.password);
-    if (!isValid) return res.status(401).json({ message: 'Invalid credentials' });
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
 
     const token = jwt.sign({ id: user._id }, 'secretkey', { expiresIn: '1h' });
     res.json({ token });
@@ -95,31 +91,41 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Update Password
+// Update Password Route
 app.post('/api/user/update-password', async (req, res) => {
   const { email, password } = req.body;
-  const token = req.headers.authorization?.split(' ')[1];
+  const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
 
-  if (!token) return res.status(401).json({ message: 'No token provided' });
+  if (!token) {
+    return res.status(401).json({ message: 'No token provided' });
+  }
 
   try {
+    // Verify the token
     const decoded = jwt.verify(token, 'secretkey');
     const user = await User.findOne({ email });
 
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
+    // Hash the new password
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Update the user's password
     user.password = hashedPassword;
     await user.save();
 
     res.status(200).json({ message: 'Password updated successfully' });
   } catch (error) {
-    console.error('Password update error:', error);
+    console.error('Error updating password:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Fetch Stock Data
+
+
+// Fetch Stock Data from Yahoo Finance
 app.get('/api/stocks/:ticker', async (req, res) => {
   const { ticker } = req.params;
 
@@ -132,19 +138,22 @@ app.get('/api/stocks/:ticker', async (req, res) => {
 
     const stockData = {
       companyName: quote.shortName || 'Unknown',
-      currentPrice: quote.regularMarketPrice,
+      currentPrice: quote.regularMarketPrice,  // Add current price here
       prices: history.map(item => item.close),
       dates: history.map(item => item.date.toISOString().split('T')[0]),
     };
 
     res.json(stockData);
   } catch (error) {
-    console.error('Error fetching stock data:', error);
+    console.error('Error fetching stock data from Yahoo Finance:', error);
     res.status(500).json({ message: 'Error fetching stock data' });
   }
 });
 
-// Predict using Python model
+
+
+
+// Prediction Route (using a Python script or model)
 app.post('/predict', (req, res) => {
   const { ticker, predictionDate } = req.body;
 
@@ -157,79 +166,91 @@ app.post('/predict', (req, res) => {
 
   exec(command, (error, stdout, stderr) => {
     if (error) {
-      console.error('Script error:', stderr);
-      return res.status(500).json({ error: 'Prediction script failed.' });
+      console.error(`Error executing script: ${stderr}`);
+      return res.status(500).json({ error: `Failed to process prediction: ${stderr}` });
     }
 
     try {
       const response = JSON.parse(stdout);
       res.json(response);
-    } catch (parseErr) {
-      console.error('Parse error:', parseErr);
-      res.status(500).json({ error: 'Invalid output from prediction script' });
+    } catch (parseError) {
+      console.error('Error parsing Python script output:', parseError);
+      res.status(500).json({ error: 'Unexpected script output.' });
     }
   });
 });
 
-// Add to Watchlist
+// Watchlist Routes (Add, Remove, Fetch)
 app.post('/watchlist/add', async (req, res) => {
   const { email, ticker, companyName = 'Unknown', prices = [], dates = [] } = req.body;
 
-  if (!email || !ticker) return res.status(400).json({ message: 'Email and ticker are required' });
+  if (!email || !ticker) {
+    return res.status(400).json({ message: 'Email and ticker are required' });
+  }
 
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
-    const exists = user.watchlist.some(stock => stock.ticker === ticker);
-    if (exists) return res.status(400).json({ message: 'Stock already in watchlist' });
+    const stockExists = user.watchlist.some(stock => stock.ticker === ticker);
+    if (stockExists) {
+      return res.status(400).json({ message: 'Stock already in watchlist' });
+    }
 
     user.watchlist.push({ ticker, companyName, prices, dates });
     await user.save();
 
     res.status(200).json({ message: 'Stock added to watchlist' });
   } catch (error) {
-    console.error('Add watchlist error:', error);
+    console.error('Error adding stock to watchlist:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Remove from Watchlist
 app.post('/watchlist/remove', async (req, res) => {
   const { email, ticker } = req.body;
 
-  if (!email || !ticker) return res.status(400).json({ message: 'Email and ticker are required' });
+  if (!email || !ticker) {
+    return res.status(400).json({ message: 'Email and ticker are required' });
+  }
 
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
-    user.watchlist = user.watchlist.filter(stock => stock.ticker !== ticker);
+    const updatedWatchlist = user.watchlist.filter(stock => stock.ticker !== ticker);
+    user.watchlist = updatedWatchlist;
     await user.save();
 
     res.status(200).json({ message: 'Stock removed from watchlist' });
   } catch (error) {
-    console.error('Remove watchlist error:', error);
+    console.error('Error removing stock from watchlist:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Get Watchlist
+// Fetch Watchlist Route
 app.get('/watchlist/:email', async (req, res) => {
   const { email } = req.params;
 
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
     res.status(200).json({ watchlist: user.watchlist });
   } catch (error) {
-    console.error('Fetch watchlist error:', error);
+    console.error('Error fetching watchlist:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Start Server
+// Start the Server
 app.listen(PORT, () => {
-  console.log(`✅ Server running at https://stockwisely.onrender.com`);
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
