@@ -10,7 +10,12 @@ const yahooFinance = require('yahoo-finance2').default;
 
 const app = express();
 const PORT = 5000;
+const cors = require('cors');
 
+app.use(cors({
+  origin: 'https://stockwisely.netlify.app/',
+  credentials: true,
+}));
 // MongoDB Connection
 mongoose.connect(process.env.MONGO_URI);
 
