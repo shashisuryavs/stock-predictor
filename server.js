@@ -12,10 +12,8 @@ const app = express();
 const PORT = 5000;
 
 // MongoDB Connection
-mongoose.connect('mongodb://localhost:27017/stockwisely', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
+mongoose.connect(process.env.MONGO_URI);
+
 
 // User Schema for Authentication and Watchlist
 const userSchema = new mongoose.Schema({
