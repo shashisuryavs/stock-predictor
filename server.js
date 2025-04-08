@@ -1,3 +1,4 @@
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -230,5 +231,5 @@ app.get('/watchlist/:email', async (req, res) => {
 
 // Start Server
 app.listen(PORT, () => {
-  console.log(`✅ Server running at http://localhost:${PORT}`);
+  console.log(`✅ Server running at https://stockwisely.onrender.com`);
 });
