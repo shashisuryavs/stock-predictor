@@ -10,15 +10,17 @@ const yahooFinance = require('yahoo-finance2').default;
 
 const app = express();
 const PORT = 5000;
-const cors = require('cors');
 
+// Middleware
 app.use(cors({
-  origin: 'https://stockwisely.netlify.app/',
+  origin: 'https://your-frontend.netlify.app',
   credentials: true,
 }));
+app.use(bodyParser.json());
+app.use('/graphs', express.static(path.join(__dirname, 'graphs')));
+
 // MongoDB Connection
 mongoose.connect(process.env.MONGO_URI);
-
 
 // User Schema for Authentication and Watchlist
 const userSchema = new mongoose.Schema({
@@ -29,20 +31,13 @@ const userSchema = new mongoose.Schema({
     {
       ticker: String,
       companyName: String,
-      prices: [Number], // Array of stock prices for the ticker
-      dates: [String], // Array of dates for the stock data
+      prices: [Number],
+      dates: [String],
     },
   ],
 });
 
 const User = mongoose.model('User', userSchema);
-
-// Middleware
-app.use(cors());
-app.use(bodyParser.json());
-app.use('/graphs', express.static(path.join(__dirname, 'graphs')));
-
-// Routes
 
 // Signup Route
 app.post('/signup', async (req, res) => {
@@ -106,7 +101,6 @@ app.post('/api/user/update-password', async (req, res) => {
   }
 
   try {
-    // Verify the token
     const decoded = jwt.verify(token, 'secretkey');
     const user = await User.findOne({ email });
 
@@ -114,10 +108,7 @@ app.post('/api/user/update-password', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Hash the new password
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Update the user's password
     user.password = hashedPassword;
     await user.save();
 
@@ -127,8 +118,6 @@ app.post('/api/user/update-password', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
-
-
 
 // Fetch Stock Data from Yahoo Finance
 app.get('/api/stocks/:ticker', async (req, res) => {
@@ -143,7 +132,7 @@ app.get('/api/stocks/:ticker', async (req, res) => {
 
     const stockData = {
       companyName: quote.shortName || 'Unknown',
-      currentPrice: quote.regularMarketPrice,  // Add current price here
+      currentPrice: quote.regularMarketPrice,
       prices: history.map(item => item.close),
       dates: history.map(item => item.date.toISOString().split('T')[0]),
     };
@@ -155,10 +144,7 @@ app.get('/api/stocks/:ticker', async (req, res) => {
   }
 });
 
-
-
-
-// Prediction Route (using a Python script or model)
+// Prediction Route
 app.post('/predict', (req, res) => {
   const { ticker, predictionDate } = req.body;
 
@@ -185,7 +171,7 @@ app.post('/predict', (req, res) => {
   });
 });
 
-// Watchlist Routes (Add, Remove, Fetch)
+// Watchlist Routes
 app.post('/watchlist/add', async (req, res) => {
   const { email, ticker, companyName = 'Unknown', prices = [], dates = [] } = req.body;
 
@@ -238,7 +224,7 @@ app.post('/watchlist/remove', async (req, res) => {
   }
 });
 
-// Fetch Watchlist Route
+// Fetch Watchlist
 app.get('/watchlist/:email', async (req, res) => {
   const { email } = req.params;
 
