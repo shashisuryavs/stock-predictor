@@ -1,6 +1,6 @@
-matplotlib
-numpy
-yfinance
-pandas
-scikit-learn
 flask
+numpy
+pandas
+yfinance
+scikit-learn
+matplotlib
