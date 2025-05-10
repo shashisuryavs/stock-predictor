@@ -1,6 +1,6 @@
 flask
 numpy
 pandas
---upgrade yfinance
+yfinance
 scikit-learn
 matplotlib
